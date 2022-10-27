@@ -1,0 +1,108 @@
+library(dplyr)
+library(ggplot2)
+library(Hmisc)
+
+if (!file.exists('data1.zip')){
+  download.file('https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2Factivity.zip',
+                destfile = paste0(getwd(), '/data1.zip'),
+                method = 'curl', quiet = T)
+}
+unzip('data1.zip')
+raw <- read.csv('activity.csv', stringsAsFactors = F)
+
+raw$date <- as.POSIXct(raw$date, format = '%Y-%m-%d')
+
+Q1data <- group_by(raw[complete.cases(raw), ], date) %>% #remove the NAs
+  summarise(total = sum(steps, na.rm = T))
+  
+ggplot(Q1data, aes(x = total)) +
+  geom_histogram(bins = 20) + 
+  xlab('Total steps per day') +
+  ylab('Frequency (count)') + 
+  scale_y_continuous(expand = c(0, 0)) + 
+  theme_classic() 
+  
+  cat('Mean of the total number of steps taken per day:', mean(Q1data$total))
+  cat('\n')
+  cat('Median of the total number of steps taken per day:', median(Q1data$total))
+  
+  Q2data <- group_by(raw, interval) %>% 
+   summarise(mean = mean(steps, na.rm = T))
+
+ggplot(Q2data, aes(x = interval, y = mean)) +
+  geom_line() +
+  xlab('5-Minute interval') +
+  ylab('Average steps') +
+  scale_y_continuous(expand = c(0, 0)) + 
+  theme_classic()
+  
+  cat('The', Q2data[which.max(Q2data$mean), ]$interval, 'th interval contains the maximum mean number of steps:', Q2data[which.max(Q2data$mean), ]$mean)
+  
+  sum(is.na(raw$steps))
+  sum(is.na(raw$date))
+  sum(is.na(raw$interval))
+  
+  Q3dataDayMean <- group_by(raw, date) %>% summarise(meanStepsPerday = mean(steps))
+cat('There are', sum(is.na(Q3dataDayMean$meanStepsPerday)), 'missing values')
+
+table(is.na(Q2data$mean))
+
+fillWithIntMean <- function(query, ref) {
+    #This function takes in two dataframes and imputes missing values
+    #The query dataframe is the one with missing values
+    #The ref dataframe is the one with the values that you want to fill the NAs
+  
+  imputedData <- c()
+    #initiate an empty vector that stores the imputed data
+  for (i in 1:nrow(query)) {
+    if (is.na(query[i, 'steps']) == T) { #if steps are missing
+      imputedData[i] <- ref[ref$interval == query[i, 'interval'], ]$mean
+          #first match the interval from the query to the reference
+          #then extract the mean steps from the reference
+          #and assign that to the imputedData vector
+    } else { #steps are not missing
+      imputedData[i] <- query[i, 'steps']
+          #retain the original data
+    }
+  }
+  
+  return(imputedData) #note that a vector is returned!!!
+}
+
+Q3data <- raw
+Q3data <- mutate(Q3data, steps = fillWithIntMean(Q3data, Q2data))
+head(Q3data)
+
+Q3data$impSteps2 <- impute(Q3data$steps, fun = rep(Q2data$mean, sum(is.na(Q3data$steps)) / nrow(Q2data)))
+head(Q3data)
+table(Q3data$steps == Q3data$impSteps2)
+Q3data <- Q3data[, -4]
+Q3data2 <- raw
+Q3data$impSteps3 <- impute(Q3data2$steps, fun = mean)
+head(Q3data)
+Q3data <- Q3data[, -4]
+Q3dataHist <- group_by(Q3data, date) %>% summarise(total = sum(steps))
+Q3dataHist$total <- as.integer(Q3dataHist$total)
+
+ggplot(Q3dataHist, aes(x = total)) +
+  geom_histogram(bins = 20) + 
+  xlab('Total steps per day') +
+  ylab('Frequency (count)') +
+  scale_y_continuous(expand = c(0, 0)) +
+  theme_classic()
+  
+  mean(Q3dataHist$total)) 
+  median(Q3dataHist$total)) 
+  
+  Q4data <- Q3data
+  Q4data$day <- ifelse(as.POSIXlt(Q4data$date)$wday %in% c(1:5), 'weekday', 'weekend')
+head(Q4data)
+
+Q4dataAvg <- Q4data %>% group_by(day, interval) %>% summarise(meanSteps = mean(steps))
+ggplot(Q4dataAvg, aes(x = interval, y = meanSteps)) +
+  geom_line() +
+  facet_grid(day ~.) + #indicates row numbers == number of variables in the day col
+  xlab('5-Minute interval') +
+  ylab('Average steps') +
+  scale_y_continuous(expand = c(0, 0)) + 
+  theme_classic()
